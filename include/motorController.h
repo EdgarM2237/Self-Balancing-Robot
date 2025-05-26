@@ -7,20 +7,33 @@
 
 class motorController{
 public:
+    /**
+     * @brief Constructor de la clase motorController.
+     *
+     * Inicializa los pines necesarios para el control de dos motores DC mediante el driver,
+     * asignando los pines de dirección (A, B) y PWM para cada motor (izquierdo y derecho).
+     *
+     * @param leftA     Pin GPIO para la entrada A del motor izquierdo.
+     * @param leftB     Pin GPIO para la entrada B del motor izquierdo.
+     * @param leftPwm   Pin GPIO para la señal PWM del motor izquierdo.
+     * @param rightA    Pin GPIO para la entrada A del motor derecho.
+     * @param rightB    Pin GPIO para la entrada B del motor derecho.
+     * @param rightPwm  Pin GPIO para la señal PWM del motor derecho.
+     */
     motorController( gpio_num_t leftA, gpio_num_t leftB, gpio_num_t leftPwm ,
                      gpio_num_t rightA, gpio_num_t rightB, gpio_num_t rightPwm);
 
     /**
-     * @brief Initialize the hardware modules.
+     * @brief Inicializar los módulos de hardware.
      */
     void init();
 
     /**
-     * @brief Set each motor speed. The values can be negative ( wheel going backwards ).
-     *        Both parameters shall be between 0 - 1024
-     * 
-     * @param leftSpeed 
-     * @param rightSpeed 
+     * @brief Establezca la velocidad de cada motor. Los valores pueden ser negativos (rueda girando hacia atras).
+     *        Ambos parametros deberan estar entre 0 - 1024
+     *
+     * @param leftSpeed     Velocidad para el motor izquierdo.
+     * @param rightSpeed    Velocidad para el motor derecho.
      */
     void setSpeed( int32_t leftSpeed, int32_t rightSpeed);
 
@@ -36,7 +49,7 @@ private:
         DIR_BCK
     }Direction;
 
-    Direction dirL, dirR; 
+    Direction dirL, dirR;
 
 
 

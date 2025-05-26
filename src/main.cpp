@@ -12,15 +12,7 @@
 #include <nvs_flash.h>
 #include <esp_mac.h>
 
-// ======== CONFIGURACIÓN ========
-#define LOOP_DELAY_MS 500 // Frecuencia de loop (10ms -> 100Hz)
-
-// Rango PWM
-const int pwm_min = -1023;
-const int pwm_max = 1023;
-
-// Objetivo de ángulo (equilibrio)
-float setpoint = 0.0;
+// ======== DEFINICIONES ========
 
 // Pines de los motores a usar
 constexpr gpio_num_t AIN1 = GPIO_NUM_25;
@@ -30,19 +22,18 @@ constexpr gpio_num_t BIN1 = GPIO_NUM_32;
 constexpr gpio_num_t BIN2 = GPIO_NUM_33;
 constexpr gpio_num_t PWMB = GPIO_NUM_14;
 
-//motors(25, 26, 27, 32, 33, 14, 13);
-// ======== OBJETOS GLOBALES ========
-
 // PID ajustes iniciales
 float Kp = 200.0;
 float Ki = 0.5;
 float Kd = 0.09;
 
+// Instancia de la clase motorController
 motorController motors(AIN1, AIN2, PWMA, BIN1, BIN2, PWMB);
 
 extern "C" void app_main()
 {
-
+    // ========== CONFIGURACIONES INICIALES ===========
+    // Definicion de caracteristicas del bus i2c
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = GPIO_NUM_21,
@@ -54,49 +45,57 @@ extern "C" void app_main()
         }
     };
 
+    // Aplicacion de configuracion del bus i2c
     i2c_param_config(I2C_NUM_0, &conf);
     i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0);
 
+    // instancias de la clase MPU y PID
     MPU6050 mpu(I2C_NUM_0);
     PID pid(Kp, Ki, Kd, 0.0);
 
     // Inicializar periféricos
-    printf("Inicializando módulos...\n");
+    ESP_LOGE("MAIN","Inicializando periféricos...");
 
+    // Inicializar mpu6050 y verificar estado de la coneccion
     mpu.begin();
     if (!mpu.testConnection())
     {
-        printf("¡Error: MPU6050 no detectado!\n");
+        ESP_LOGE("MAIN","MPU6050 no detectado");
         while (true)
             vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
-    mpu.calibrate(); // Calibrar orientación inicial
-    printf("MPU6050 calibrado\n");
+    //Calibracion del sensor mpu respecto a un punto
+    //? Actualmente en caso omiso
+    mpu.calibrate();
+    ESP_LOGE("MAIN","MPU6050 calibrado");
 
+
+    // Inicializar motores
     motors.init();
-
-    printf("Sistema listo. Comenzando loop de control...\n");
+    ESP_LOGE("MAIN","Sistema listo. Comenzando loop de control...");
 
     uint32_t motor;
     float last_update = 0.0f;
 
+    // ========== LOOP DE CONTROL ===========
     for (;;)
     {
-        // Step 1: calculate alpha ( Angle from the vertical)
-
+        // Guardar dt para nuestro PID
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         float dt = (now - last_update) / 1000.0;
         last_update = now;
 
-        // Step 2: Calculate motors using PID
-        float roll = mpu.getPitch();
-        motor = pid.update(roll, dt);
+        // Calcular velocidad de motores respecto al vector pitch y dt
+        float pitch = mpu.getPitch();
+        motor = pid.update(pitch, dt);
+
+        //Establecer velocidad de motores
         motors.setSpeed(motor,motor);
         mpu.update();
 
-        //ESP_LOGE("MAIN","Roll: %.2f", roll);
-        ESP_LOGE("MAIN","Motor: %ld", motor);
+        //ESP_LOGE("MAIN","Pitch: %.2f", pitch);
+        //ESP_LOGE("MAIN","Motor: %ld", motor);
 
         vTaskDelay(2);
     }
