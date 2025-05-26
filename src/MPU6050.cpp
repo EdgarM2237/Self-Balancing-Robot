@@ -20,6 +20,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include <math.h>
+#include <esp_timer.h>
 
 // definicion de registros por leer
 #define WHO_AM_I_REG 0x75
@@ -76,17 +77,30 @@ bool MPU6050::testConnection() {
 
        - Giroscopio: divide por 131.0 para obtener grados/segundo.
 */
-void MPU6050::readRawData() {
+void MPU6050::readRawData(mpu6050_sensor_data &acc, mpu6050_sensor_data &gyr) {
     /*
         Función auxiliar que lee dos bytes seguidos desde un registro del sensor y los convierte a un int16_t, esto nos retorna valores de 16 bits con signo
     */
-    accX = (float)readWord(ACCEL_XOUT_H) / 16384.0;
-    accY = (float)readWord(ACCEL_XOUT_H + 2) / 16384.0;
-    accZ = (float)readWord(ACCEL_XOUT_H + 4) / 16384.0;
+    uint64_t current_time_us = esp_timer_get_time();  // tiempo actual en microsegundos
+    float delta_time = 0;
 
-    gyroX = (float)readWord(GYRO_XOUT_H) / 131.0 - gyro_offset_x;
-    gyroY = (float)readWord(GYRO_XOUT_H + 2) / 131.0 - gyro_offset_y;
-    gyroZ = (float)readWord(GYRO_XOUT_H + 4) / 131.0 - gyro_offset_z;
+    if (last_read_time_us != 0) {
+        delta_time = (current_time_us - last_read_time_us) / 1e6;  // convertir a segundos
+    }
+
+    last_read_time_us = current_time_us;
+
+    // Leer acelerómetro
+    acc.x = (float)readWord(ACCEL_XOUT_H) / 16384.0;
+    acc.y = (float)readWord(ACCEL_XOUT_H + 2) / 16384.0;
+    acc.z = (float)readWord(ACCEL_XOUT_H + 4) / 16384.0;
+    acc.timestamp = delta_time;
+
+    // Leer giroscopio
+    gyr.x = (float)readWord(GYRO_XOUT_H) / 131.0 - gyro_offset_x;
+    gyr.y = (float)readWord(GYRO_XOUT_H + 2) / 131.0 - gyro_offset_y;
+    gyr.z = (float)readWord(GYRO_XOUT_H + 4) / 131.0 - gyro_offset_z;
+    gyr.timestamp = delta_time;
 }
 
 /*
@@ -118,18 +132,19 @@ void MPU6050::calibrate(int calibration_time_ms) {
     Debe llamarse repetidamente dentro de un bucle para extraer los datos del sensor y hacer los calculos correspondiente siguiendo con la logica de llamar a readRawData() para actualizar datos del sensor, integra el valor del gyroZ en el tiempo para calcular el Yaw y usa formulas trigonometricas para calcular el Pitch y Roll con los valores del acelerometro.
 */
 void MPU6050::update() {
-    readRawData();
+    mpu6050_sensor_data accData, gyrData;
+    readRawData(accData, gyrData);
 
     // Integración simple para yaw
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     float dt = (now - last_update) / 1000.0;
     last_update = now;
 
-    yaw += gyroZ * dt; // Integracion de gyroZ en el tiempo dt para obtener Yaw
+    yaw += gyrData.z * dt; // Integracion de gyroZ en el tiempo dt para obtener Yaw
 
     // Cálculo de pitch y roll con acelerómetro
-    pitch = atan2(accY, sqrt(accX * accX + accZ * accZ)) * 180.0 / M_PI;
-    roll  = atan2(-accX, accZ) * 180.0 / M_PI;
+    pitch = atan2(accData.y, sqrt(accData.x * accData.x + accData.z * accData.z)) * 180.0 / M_PI;
+    roll  = atan2(-accData.x, accData.z) * 180.0 / M_PI;
 }
 
 //Retorno de los ultimos valores calculados

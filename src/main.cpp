@@ -1,17 +1,19 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
 #include "MPU6050.h"
-#include "PIDController.h"
-#include "MotorDriver.h"
+#include "pid.h"
+#include "motorController.h"
+
+#include <esp_log.h>
+#include <esp_wifi.h>
+#include <esp_now.h>
+#include <nvs_flash.h>
+#include <esp_mac.h>
 
 // ======== CONFIGURACIÓN ========
 #define LOOP_DELAY_MS 500 // Frecuencia de loop (10ms -> 100Hz)
-
-// PID ajustes iniciales
-float Kp = 30.0;
-float Ki = 0.0;
-float Kd = 0.8;
 
 // Rango PWM
 const int pwm_min = -1023;
@@ -20,13 +22,27 @@ const int pwm_max = 1023;
 // Objetivo de ángulo (equilibrio)
 float setpoint = 0.0;
 
+// Pines de los motores a usar
+constexpr gpio_num_t AIN1 = GPIO_NUM_25;
+constexpr gpio_num_t AIN2 = GPIO_NUM_26;
+constexpr gpio_num_t PWMA = GPIO_NUM_27;
+constexpr gpio_num_t BIN1 = GPIO_NUM_32;
+constexpr gpio_num_t BIN2 = GPIO_NUM_33;
+constexpr gpio_num_t PWMB = GPIO_NUM_14;
+
+//motors(25, 26, 27, 32, 33, 14, 13);
 // ======== OBJETOS GLOBALES ========
 
-PIDController pid(Kp, Ki, Kd);
-MotorDriver motors(16, 17, 4, 5, 18, 19, 33); // Pines ejemplo
+// PID ajustes iniciales
+float Kp = 200.0;
+float Ki = 0.5;
+float Kd = 0.09;
+
+motorController motors(AIN1, AIN2, PWMA, BIN1, BIN2, PWMB);
 
 extern "C" void app_main()
 {
+
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = GPIO_NUM_21,
@@ -40,7 +56,10 @@ extern "C" void app_main()
 
     i2c_param_config(I2C_NUM_0, &conf);
     i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0);
+
     MPU6050 mpu(I2C_NUM_0);
+    PID pid(Kp, Ki, Kd, 0.0);
+
     // Inicializar periféricos
     printf("Inicializando módulos...\n");
 
@@ -55,31 +74,30 @@ extern "C" void app_main()
     mpu.calibrate(); // Calibrar orientación inicial
     printf("MPU6050 calibrado\n");
 
-    motors.begin();
-    pid.setSetpoint(setpoint);
+    motors.init();
 
     printf("Sistema listo. Comenzando loop de control...\n");
 
-    while (true)
+    uint32_t motor;
+    float last_update = 0.0f;
+
+    for (;;)
     {
+        // Step 1: calculate alpha ( Angle from the vertical)
+
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        float dt = (now - last_update) / 1000.0;
+        last_update = now;
+
+        // Step 2: Calculate motors using PID
+        float roll = mpu.getPitch();
+        motor = pid.update(roll, dt);
+        motors.setSpeed(motor,motor);
         mpu.update();
-        float roll = mpu.getRoll();
 
-        // Calcular PID
-        float pid_output = pid.compute(roll);
+        //ESP_LOGE("MAIN","Roll: %.2f", roll);
+        ESP_LOGE("MAIN","Motor: %ld", motor);
 
-        // Limitar PWM
-        if (pid_output > pwm_max)
-            pid_output = pwm_max;
-        if (pid_output < pwm_min)
-            pid_output = pwm_min;
-
-        // Controlar motores (un solo valor)
-        motors.move((int)pid_output);
-
-        // Log para debugging
-        printf("Roll: %.2f | PID: %.2f\n", roll, pid_output);
-
-        vTaskDelay(LOOP_DELAY_MS / portTICK_PERIOD_MS);
+        vTaskDelay(2);
     }
 }

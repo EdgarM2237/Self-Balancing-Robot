@@ -22,6 +22,7 @@ void MotorDriver::begin() {
     timer_conf.duty_resolution  = LEDC_TIMER_10_BIT;
     timer_conf.clk_cfg          = LEDC_AUTO_CLK;
     timer_conf.timer_num        = LEDC_TIMER_0;
+    timer_conf.deconfigure      = 0;
     ledc_timer_config(&timer_conf);
 
     ledc_channel_config_t channel0 = {
